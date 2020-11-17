@@ -13,9 +13,11 @@
 #include <common/mm.h>
 #include <common/kprint.h>
 #include <common/macro.h>
+#include <common/errno.h>
 
 #include "buddy.h"
 #include "slab.h"
+#include "page_table.h"
 
 extern unsigned long *img_end;
 
@@ -41,6 +43,7 @@ unsigned long get_ttbr1(void)
 	return pgd;
 }
 
+//extern static int get_next_ptp(ptp_t * cur_ptp, u32 level, vaddr_t va, ptp_t ** next_ptp, pte_t ** pte, bool alloc);
 /*
  * map_kernel_space: map the kernel virtual address
  * [va:va+size] to physical addres [pa:pa+size].
@@ -51,7 +54,26 @@ unsigned long get_ttbr1(void)
 void map_kernel_space(vaddr_t va, paddr_t pa, size_t len)
 {
 	// <lab2>
-
+	int rev = 0;
+	size_t block_size = 1 << 21;
+	for(int i = 0; i < len / block_size; i++) {
+		ptp_t * ptp = (ptp_t *)get_ttbr1();
+		pte_t * pte;
+		for(int j = 0; j < 3; j++) {
+			rev = get_next_ptp(ptp, j, va, &ptp, &pte, true);
+			if(rev == -ENOMAPPING) return;
+		}
+		pte->l2_block.is_valid = 1;
+		pte->l2_block.is_table = 0;
+		pte->l2_block.pfn = pa >> 21;
+		pte->l2_block.UXN = 1;
+		pte->l2_block.AF = 1;
+		pte->l2_block.SH = 3;
+		pte->l2_block.attr_index = 4;
+		
+		va += block_size;
+		pa += block_size;
+	}
 	// </lab2>
 }
 

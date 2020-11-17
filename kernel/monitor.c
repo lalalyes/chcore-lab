@@ -30,6 +30,17 @@ int stack_backtrace()
 	printk("Stack backtrace:\n");
 
 	// Your code here.
-
+	long long* fp = (long long*)(*(long long*)read_fp());//read_fp() returns FP of the current function, but FP we shall get is FP of the invoker.
+	while(*(fp) != 0){
+		printk("LR %lx FP %lx Args ", *(fp+1), fp);	
+		long long* ap = fp - 2;
+		int i;
+		for(i = 0; i < 5; i++){
+			printk("%d ", *ap);
+			ap--;
+		}
+		printk("\n");
+		fp = (long long*) *fp;
+	}
 	return 0;
 }
