@@ -84,7 +84,7 @@ static int set_pte_flags(pte_t * entry, vmr_prop_t flags, int kind)
  * alloc: if true, allocate a ptp when missing
  *
  */
-static int get_next_ptp(ptp_t * cur_ptp, u32 level, vaddr_t va,
+int get_next_ptp(ptp_t * cur_ptp, u32 level, vaddr_t va,
 			ptp_t ** next_ptp, pte_t ** pte, bool alloc)
 {
 	u32 index = 0;
@@ -162,7 +162,24 @@ static int get_next_ptp(ptp_t * cur_ptp, u32 level, vaddr_t va,
 int query_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, paddr_t * pa, pte_t ** entry)
 {
 	// <lab2>
+	//get_next_ptp(ptp_t * cur_ptp, u32 level, vaddr_t va, ptp_t ** next_ptp, pte_t ** pte, bool alloc)
+	ptp_t * ptp = (ptp_t *)pgtbl;
+	pte_t * pte;
+	int rev;
+	u32 level = 0;
 
+	while(level <= 3) {
+		rev = get_next_ptp(ptp, level, va, &ptp, &pte, false);
+	    if(rev == -ENOMAPPING) return -ENOMAPPING;
+	    if(rev == BLOCK_PTP  || level == 3){
+			if(level == 1) *pa = virt_to_phys((vaddr_t)ptp) + GET_VA_OFFSET_L1(va);
+			else if(level == 2) *pa = virt_to_phys((vaddr_t)ptp) + GET_VA_OFFSET_L2(va);
+			else *pa = virt_to_phys((vaddr_t)ptp) + GET_VA_OFFSET_L3(va);
+			*entry = pte;
+			return 0;
+		}
+		level++;
+	}
 	// </lab2>
 	return 0;
 }
@@ -186,7 +203,20 @@ int map_range_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, paddr_t pa,
 		       size_t len, vmr_prop_t flags)
 {
 	// <lab2>
-
+	int rev = 0;
+	for(int i = 0; i < len / PAGE_SIZE; i++) {
+		ptp_t * ptp = (ptp_t *)pgtbl;
+		pte_t * pte;
+		for(int j = 0; j < 4; j++) {
+			rev = get_next_ptp(ptp, j, va, &ptp, &pte, true);
+			if(rev == -ENOMAPPING) return -ENOMAPPING;
+		}
+		pte->l3_page.pfn = pa >> PAGE_SHIFT;
+		set_pte_flags(pte, flags, USER_PTE);
+		va += PAGE_SIZE;
+		pa += PAGE_SIZE;
+	}
+	flush_tlb();
 	// </lab2>
 	return 0;
 }
@@ -207,7 +237,22 @@ int map_range_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, paddr_t pa,
 int unmap_range_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, size_t len)
 {
 	// <lab2>
-
+	int rev = 0;
+	for(int i = 0; i < len / PAGE_SIZE; i++) {
+		ptp_t * ptp = (ptp_t *)pgtbl;
+		pte_t * pte;
+		for(int j = 0; j < 4; j++) {
+			rev = get_next_ptp(ptp, j, va, &ptp, &pte, true);
+			if(rev == -ENOMAPPING) return -ENOMAPPING;
+			if(rev == BLOCK_PTP || j == 3) {
+				if(j == 1) pte->l1_block.is_valid = 0;
+				if(j == 2) pte->l2_block.is_valid = 0;
+				if(j == 3) pte->l3_page.is_valid = 0;
+			}
+		}
+		va += PAGE_SIZE;
+	}
+	flush_tlb();
 	// </lab2>
 	return 0;
 }
