@@ -56,7 +56,9 @@ void init_thread_ctx(struct thread *thread, u64 stack, u64 func, u32 prio,
 	 */
 
 	/* Fill the context of the thread */
-
+	arch_set_thread_stack(thread, stack);
+	arch_set_thread_next_ip(thread, func);
+	arch_enable_interrupt(thread);
 	/* Set thread type */
 	thread->thread_ctx->type = type;
 }
