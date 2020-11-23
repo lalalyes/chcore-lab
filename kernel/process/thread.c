@@ -175,6 +175,9 @@ static u64 load_binary(struct process *process,
 			 * page aligned segment size. Take care of the page alignment when allocating
 			 * and mapping physical memory.
 			 */
+			p_vaddr = elf->p_headers[i].p_vaddr;
+			seg_sz = elf->p_headers[i].p_filesz;
+			seg_map_sz = elf->p_headers[i].p_memsz + p_vaddr % PAGE_SIZE;
 
 			pmo = obj_alloc(TYPE_PMO, sizeof(*pmo));
 			if (!pmo) {
@@ -193,6 +196,7 @@ static u64 load_binary(struct process *process,
 			 * You should copy data from the elf into the physical memory in pmo.
 			 * The physical address of a pmo can be get from pmo->start.
 			 */
+			memcpy((void *) phys_to_virt(pmo->start) + p_vaddr % PAGE_SIZE, bin + elf->p_headers[i].p_offset, seg_sz);
 
 			flags = PFLAGS2VMRFLAGS(elf->p_headers[i].p_flags);
 
@@ -381,7 +385,15 @@ int sys_set_affinity(u64 thread_cap, s32 aff)
 	 * Lab4
 	 * Finish the sys_set_affinity
 	 */
-	return -1;
+	if (!thread) return -1;
+	if (aff >= PLAT_CPU_NUM) {
+		ret = -1;
+	} else {
+		thread->thread_ctx->affinity = aff;
+	}
+
+	obj_put(thread);
+	return ret;
 }
 
 int sys_get_affinity(u64 thread_cap)
@@ -402,5 +414,10 @@ int sys_get_affinity(u64 thread_cap)
 	 * Lab4
 	 * Finish the sys_get_affinity
 	 */
-	return -1;
+	if (!thread) {
+		return -1;
+	}
+	aff = thread->thread_ctx->affinity;
+	obj_put(thread);
+	return aff;
 }

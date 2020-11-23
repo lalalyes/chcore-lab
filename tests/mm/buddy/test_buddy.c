@@ -102,6 +102,7 @@ void test_buddy(void)
 	//printf("ncheck is %ld\n", ncheck);
 	mu_check(nget == ncheck);
 
+
 	/* alloc single page for $npages times */
 	test_alloc(&global_mem, npages, 0);
 
