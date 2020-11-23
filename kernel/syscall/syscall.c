@@ -45,7 +45,7 @@ u32 sys_getc(void)
  */
 u32 sys_get_cpu_id(void)
 {
-	return -1;
+	return smp_get_cpu_id();
 }
 
 /*
@@ -80,6 +80,7 @@ const void *syscall_table[NR_SYSCALL] = {
 	 * Lab4
 	 * Add syscall
 	 */
+	[SYS_ipc_reg_call] = sys_ipc_reg_call,
 	[SYS_get_cpu_id] = sys_get_cpu_id,
 
 	[SYS_create_pmos] = sys_create_pmos,
