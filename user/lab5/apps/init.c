@@ -74,6 +74,7 @@ int do_cd(char *cmdline)
 int do_top()
 {
 	// TODO: your code here
+	usys_top();
 	return 0;
 }
 

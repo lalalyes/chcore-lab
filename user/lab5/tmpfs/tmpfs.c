@@ -404,6 +404,10 @@ int tfs_load_image(const char *start)
 
 		err = tfs_namex(&dirat, &leaf, 0);
 
+		if (err < 0 && err != -ENOENT) {
+			return err;
+		}
+		
 		int file_type = f->header.c_mode & CPIO_MASK;
 		dent = tfs_lookup(dirat, leaf, strlen(leaf));
 		if (!dent) {
