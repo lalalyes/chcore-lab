@@ -17,6 +17,10 @@
 #define FS_REG (1)
 #define FS_DIR (2)
 
+#define CPIO_MASK 0170000
+#define CPIO_DIRECTORY 0040000
+#define CPIO_REGULAR_FILE 0100000
+
 struct string {
 	char *str;
 	size_t len;

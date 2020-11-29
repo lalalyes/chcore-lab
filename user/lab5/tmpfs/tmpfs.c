@@ -130,6 +130,22 @@ static int tfs_mknod(struct inode *dir, const char *name, size_t len, int mkdir)
 		return -ENOENT;
 	}
 	// TODO: write your code here
+	u64 hash = hash_chars(name, len);
+	struct hlist_head *head;
+
+	head = htable_get_bucket(&dir->dentries, (u32) hash);
+
+	for_each_in_hlist(dent, node, head) {
+		if (dent->name.len == len && 0 == strcmp(dent->name.str, name))
+			return -EEXIST;
+	}
+	if(mkdir) inode = new_dir();
+	else inode = new_reg();
+	if (IS_ERR(inode)) return -ENOENT;
+
+	dent = new_dent(inode, name, len);
+	if (IS_ERR(dent)) return -ENOENT;
+	htable_add(&dir->dentries, (u32)hash, &dent->node);
 
 	return 0;
 }
@@ -175,7 +191,6 @@ int tfs_namex(struct inode **dirat, const char **name, int mkdir_p)
 	BUG_ON(dirat == NULL);
 	BUG_ON(name == NULL);
 	BUG_ON(*name == NULL);
-
 	char buff[MAX_FILENAME_LEN + 1];
 	int i;
 	struct dentry *dent;
@@ -189,6 +204,36 @@ int tfs_namex(struct inode **dirat, const char **name, int mkdir_p)
 	} else {
 		BUG_ON(*dirat == NULL);
 		BUG_ON((*dirat)->type != FS_DIR);
+	}
+
+	for(i = 0; i < MAX_FILENAME_LEN; i++) {
+		if(!(*name)[i] || (*name)[i] == '/') {
+			buff[i] = '\0';
+			break;
+		}
+		buff[i] = (*name)[i];
+	}
+
+	dent = tfs_lookup(*dirat, buff, i);
+	if (!dent) {
+		if (mkdir_p) {
+			err = tfs_mkdir(*dirat, buff, i);
+			if (err < 0) return err;
+			dent = tfs_lookup(*dirat, buff, i);
+		} else return -ENOENT;
+	}
+
+	if ((*name)[i]) {
+		*dirat = dent->inode;
+		while ((*name)[i] && (*name)[i] == '/') i++;
+		if (!(*name)[i]) {
+			*name += i;
+			return 0;
+		}
+		else {
+			*name += i;
+			return tfs_namex(dirat, name, mkdir_p);
+		}
 	}
 
 	// make sure a child name exists
@@ -276,6 +321,28 @@ ssize_t tfs_file_write(struct inode * inode, off_t offset, const char *data,
 	void *page;
 
 	// TODO: write your code here
+	to_write = size;
+
+	while(to_write > 0) {
+		page_no = cur_off / PAGE_SIZE;
+		page_off = cur_off % PAGE_SIZE;
+
+		page = radix_get(&inode->data, page_no * PAGE_SIZE);
+		if(!page) {
+			page = malloc(PAGE_SIZE);
+			if(!page) return -ENOMEM;
+			memset(page, 0, PAGE_SIZE);
+			radix_add(&inode->data, page_no * PAGE_SIZE, page);
+		}
+	
+		int len = PAGE_SIZE - page_off > to_write ? to_write : PAGE_SIZE - page_off;
+		memcpy((char*) page + page_off, data, len);
+		cur_off += len;
+		to_write -= len;
+		data += len;
+	}
+
+	if (cur_off > inode->size) inode->size = cur_off;
 
 	return cur_off - offset;
 }
@@ -295,6 +362,20 @@ ssize_t tfs_file_read(struct inode * inode, off_t offset, char *buff,
 	size_t to_read;
 	void *page;
 
+	if (offset + size > inode->size) to_read = inode->size - offset;
+	else to_read = size;
+
+	while(to_read > 0) {
+		page_no = cur_off / PAGE_SIZE;
+		page = radix_get(&inode->data, page_no * PAGE_SIZE);
+		if(!page) return -ENOENT;
+		page_off = cur_off % PAGE_SIZE;
+		int len = PAGE_SIZE - page_off > to_read ? to_read : PAGE_SIZE - page_off;
+		memcpy(buff, (char*) page + page_off, len);
+		cur_off += len;
+		to_read -= len;
+		buff += len;
+	}
 	return cur_off - offset;
 }
 
@@ -318,6 +399,29 @@ int tfs_load_image(const char *start)
 
 	for (f = g_files.head.next; f; f = f->next) {
 		// TODO: Lab5: your code is here
+		dirat = tmpfs_root;
+		leaf = f->name;
+
+		err = tfs_namex(&dirat, &leaf, 0);
+
+		int file_type = f->header.c_mode & CPIO_MASK;
+		dent = tfs_lookup(dirat, leaf, strlen(leaf));
+		if (!dent) {
+			if(file_type == CPIO_DIRECTORY) {
+				err = tfs_mkdir(dirat, leaf, strlen(leaf));
+			} else {
+				err = tfs_creat(dirat, leaf, strlen(leaf));
+			}
+
+			if (err < 0) {
+				return err;
+			}
+		}
+		dent = tfs_lookup(dirat, leaf, strlen(leaf));
+
+		if (file_type == CPIO_REGULAR_FILE && (err = tfs_file_write(dent->inode, 0, f->data, f->header.c_filesize)) < 0) {
+			return err;
+		}
 	}
 
 	return 0;

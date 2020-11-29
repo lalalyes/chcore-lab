@@ -54,26 +54,47 @@ unsigned long get_ttbr1(void)
 void map_kernel_space(vaddr_t va, paddr_t pa, size_t len)
 {
 	// <lab2>
-	int rev = 0;
-	size_t block_size = 1 << 21;
-	for(int i = 0; i < len / block_size; i++) {
-		ptp_t * ptp = (ptp_t *)get_ttbr1();
-		pte_t * pte;
-		for(int j = 0; j < 3; j++) {
-			rev = get_next_ptp(ptp, j, va, &ptp, &pte, true);
-			if(rev == -ENOMAPPING) return;
+	vaddr_t *pgtbl = (vaddr_t *)get_ttbr1();
+
+	pa = ROUND_DOWN(pa, PAGE_SIZE);
+	va = ROUND_DOWN(va, PAGE_SIZE);
+	len = ROUND_UP(len, PAGE_SIZE);
+
+	for(int i = 0; i < len/PAGE_SIZE; i++){
+		ptp_t *cur_ptp = (ptp_t *)pgtbl;
+		ptp_t *next_ptp;
+		pte_t *entry;
+		int level = 0;
+		while(level < 3){
+			/* notice alloc is 1 along the way, to allocate the new page in the page table */
+			int ret = get_next_ptp(cur_ptp, level, va, &next_ptp, &entry, 1);
+			if(ret < 0){
+				return ret;
+			}
+			cur_ptp = next_ptp;
+			level++;
 		}
-		pte->l2_block.is_valid = 1;
-		pte->l2_block.is_table = 0;
-		pte->l2_block.pfn = pa >> 21;
-		pte->l2_block.UXN = 1;
-		pte->l2_block.AF = 1;
-		pte->l2_block.SH = 3;
-		pte->l2_block.attr_index = 4;
-		
-		va += block_size;
-		pa += block_size;
+		/* level == 3, get the corresponding page entry and modify the flags */
+		u32 index = GET_L3_INDEX(va);
+		entry = &(next_ptp->ent[index]);
+
+		entry->pte = 0;
+		entry->l3_page.is_valid = 1;
+		entry->l3_page.is_page = 1;
+		entry->l3_page.pfn = pa >> PAGE_SHIFT;
+
+		entry->l3_page.UXN = 1;
+		entry->l3_page.AF = 1;
+		entry->l3_page.SH = 3;
+		entry->l3_page.attr_index = 4;
+		entry->l3_page.is_valid = 1;
+
+		va += PAGE_SIZE;
+		pa += PAGE_SIZE;
 	}
+
+	flush_tlb();
+
 	// </lab2>
 }
 
